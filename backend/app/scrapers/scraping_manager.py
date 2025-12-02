@@ -1,89 +1,127 @@
 """
-Manager principal pour orchestrer tous les scrapers
+Manager principal pour orchestrer tous les scrapers.
+Ce fichier orchestre la recherche pour tous les joueurs sur différentes sources,
+gère l'analyse des risques de blessure et la sauvegarde en base de données.
 """
 from typing import List, Dict
 from datetime import datetime
 from loguru import logger
 from sqlalchemy.orm import Session
 
+# Importations locales
 from app.database import SessionLocal
 from app.models.player import Player
 from app.models.injury import Injury
 from app.analysis.confidence_scorer import injury_analyzer
+# Scrapers
 from .lequipe_scraper import lequipe_scraper
 from .twitter_scraper import TwitterSeleniumScraper
+# Configuration
 from app.config_with_twitter import settings
 
 
 class ScrapingManager:
-    """Manager qui orchestre tous les scrapers"""
+    """Manager qui orchestre tous les scrapers et maintient une session Twitter persistante."""
     
     def __init__(self):
         self.scrapers = [
             lequipe_scraper,
-            # Twitter sera initialisé avec credentials
         ]
+        self.twitter_scraper: Optional[TwitterSeleniumScraper] = None 
     
+    # --- GESTION DE LA SESSION TWITTER ---
+        
+    def initialize_twitter_scraper(self):
+        """Initialise le scraper Twitter et ouvre le navigateur une seule fois."""
+        if self.twitter_scraper is None and settings.TWITTER_EMAIL and settings.TWITTER_PASSWORD:
+            logger.info("🔧 Tentative d'initialisation du Twitter Scraper...")
+            try:
+                self.twitter_scraper = TwitterSeleniumScraper(
+                    twitter_email=settings.TWITTER_EMAIL,
+                    twitter_password=settings.TWITTER_PASSWORD,
+                    twitter_username=settings.TWITTER_USERNAME,
+                )
+                # Le login sera effectué lors du premier appel à search_player_news
+            except Exception as e:
+                logger.error(f"❌ Erreur lors de l'initialisation du Twitter Scraper : {e}")
+                self.twitter_scraper = None
+                
+    def close_twitter_scraper(self):
+        """Ferme explicitement le scraper Twitter, à appeler à la fin du programme principal."""
+        if self.twitter_scraper:
+            logger.info("🛑 Fermeture manuelle du Twitter Scraper.")
+            self.twitter_scraper.close()
+            self.twitter_scraper = None
+            
+    # --- PROCESSUS DE SCRAPING PRINCIPAL ---
+
     def scrape_all_players(self, db: Session = None) -> Dict:
-        """Scrape les infos de tous les joueurs"""
+        """
+        Scrape les infos de tous les joueurs actifs en utilisant tous les scrapers disponibles.
+        """
         if db is None:
             db = SessionLocal()
         
         logger.info("=" * 60)
-        logger.info("🕷️  DÉBUT DU SCRAPING")
+        logger.info("🕷️  DÉBUT DU SCRAPING GLOBAL")
         logger.info("=" * 60)
         
+        # 1. Préparation des données joueurs
         players = db.query(Player).filter(Player.is_active == True).all()
         logger.info(f"📊 {len(players)} joueurs à scraper")
         
         players_data = [
-            {
-                "id": p.id,
-                "name": p.display_name,
-                "display_name": p.display_name,
-                "club_name": p.club_name,
-            }
+            {"id": p.id, "name": p.display_name, "display_name": p.display_name, "club_name": p.club_name}
             for p in players
         ]
         
         all_results = []
         
-        # Twitter scraper (si configuré)
-        if settings.TWITTER_EMAIL and settings.TWITTER_PASSWORD:
+        # 2. Scraping Twitter (Session persistante)
+        if self.twitter_scraper:
             try:
-                logger.info(f"\n🔍 Scraping with Twitter...")
-                twitter_scraper = TwitterSeleniumScraper(
-                    twitter_email=settings.TWITTER_EMAIL,
-                    twitter_password=settings.TWITTER_PASSWORD,
-                    twitter_username=settings.TWITTER_USERNAME,
-                )
-                results = twitter_scraper.scrape_players(players_data)
-                all_results.extend(results)
-                logger.success(f"✅ Twitter: {len(results)} résultats")
-                twitter_scraper.close()
+                logger.info(f"\n🔍 Scraping avec Twitter (Session persistante)...")
+                twitter_results = []
+                
+                for player in players_data:
+                    player_name = player['display_name']
+                    logger.info(f"   -> Recherche pour {player_name}...")
+                    # search_player_news gère l'ouverture et la connexion si besoin
+                    player_results = self.twitter_scraper.search_player_news(player_name)
+                    twitter_results.extend(player_results)
+                
+                all_results.extend(twitter_results)
+                logger.success(f"✅ Twitter: {len(twitter_results)} résultats consolidés.")
+                
+                # 🛑 ATTENTION : PAS d'appel à self.twitter_scraper.close() ici !
+                # Le scraper reste ouvert pour la prochaine exécution de la fonction si nécessaire.
+                
             except Exception as e:
-                logger.error(f"❌ Twitter failed: {e}")
+                logger.error(f"❌ Twitter a échoué pendant le scraping : {e}")
+                # En cas d'échec catastrophique, on ferme
+                self.close_twitter_scraper() 
         
-        # Autres scrapers
+        # 3. Autres scrapers
         for scraper in self.scrapers:
-            logger.info(f"\n🔍 Scraping with {scraper.name}...")
+            logger.info(f"\n🔍 Scraping avec {scraper.name}...")
             try:
+                # On suppose que les autres scrapers n'ont pas de problème de session
                 results = scraper.scrape_players(players_data)
                 all_results.extend(results)
-                logger.success(f"✅ {scraper.name}: {len(results)} résultats")
+                logger.success(f"✅ {scraper.name}: {len(results)} résultats.")
             except Exception as e:
-                logger.error(f"❌ {scraper.name} failed: {e}")
+                logger.error(f"❌ {scraper.name} a échoué : {e}")
         
-        logger.info(f"\n📊 Total: {len(all_results)} résultats")
+        logger.info(f"\n📊 Total: {len(all_results)} résultats bruts collectés.")
         
-        # Analyser
+        # 4. Analyse et Sauvegarde
         logger.info("\n🧠 Analyse des résultats...")
         injuries_detected = self._analyze_results(all_results, db)
         
-        # Sauvegarder
-        logger.info("\n💾 Sauvegarde des blessures...")
+        logger.info("\n💾 Sauvegarde et mise à jour des blessures...")
         added, updated = self._save_injuries(injuries_detected, db)
         
+        # 5. Statistiques et Fin
         stats = {
             "total_results": len(all_results),
             "injuries_detected": len(injuries_detected),
@@ -93,13 +131,13 @@ class ScrapingManager:
         }
         
         logger.info("\n" + "=" * 60)
-        logger.success("✅ SCRAPING TERMINÉ")
+        logger.success("✅ SCRAPING GLOBAL TERMINÉ")
         logger.info("=" * 60)
         logger.info(f"📊 Statistiques:")
-        logger.info(f"   • Résultats scraped: {stats['total_results']}")
-        logger.info(f"   • Blessures détectées: {stats['injuries_detected']}")
-        logger.info(f"   • Blessures ajoutées: {stats['injuries_added']}")
-        logger.info(f"   • Blessures mises à jour: {stats['injuries_updated']}")
+        logger.info(f"   • Résultats scraped: {stats['total_results']}")
+        logger.info(f"   • Blessures détectées: {stats['injuries_detected']}")
+        logger.info(f"   • Blessures ajoutées: {stats['injuries_added']}")
+        logger.info(f"   • Blessures mises à jour: {stats['injuries_updated']}")
         logger.info("=" * 60)
         
         if db:
@@ -107,8 +145,10 @@ class ScrapingManager:
         
         return stats
     
+    # --- FONCTIONS D'ANALYSE ET DE SAUVEGARDE (Inchangées) ---
+    
     def _analyze_results(self, results: List[Dict], db: Session) -> List[Dict]:
-        """Analyse les résultats"""
+        """Analyse les résultats et attribue un score de confiance."""
         injuries_detected = []
         
         for result in results:
@@ -117,13 +157,15 @@ class ScrapingManager:
             source = result["source"]
             url = result["url"]
             
+            # Utilise l'analyseur de confiance
             analysis = injury_analyzer.analyze_text(
                 text=content,
                 player_name=player_name,
                 source=source,
-                source_type="website",
+                source_type="social", # Type mis à jour pour Twitter
             )
             
+            # Seules les blessures avec une confiance suffisante sont conservées
             if analysis["is_injury"] and analysis["confidence"] >= 0.5:
                 player = db.query(Player).filter(
                     Player.display_name.ilike(f"%{player_name}%")
@@ -149,7 +191,7 @@ class ScrapingManager:
         return injuries_detected
     
     def _save_injuries(self, injuries: List[Dict], db: Session) -> tuple:
-        """Sauvegarde les blessures"""
+        """Sauvegarde les blessures en base de données ou met à jour les existantes."""
         added = 0
         updated = 0
         
@@ -162,13 +204,15 @@ class ScrapingManager:
             ).first()
             
             if existing_injury:
+                # Mise à jour si la confiance est élevée
                 if injury_data["confidence"] > 0.7:
                     existing_injury.injury_description = injury_data["injury_description"]
                     existing_injury.severity = injury_data["severity"]
                     existing_injury.source = injury_data["source"]
                     updated += 1
-                    logger.info(f"   ↻ Mise à jour: {injury_data['player_name']}")
+                    logger.info(f"   ↻ Mise à jour: {injury_data['player_name']}")
             else:
+                # Nouvelle blessure
                 new_injury = Injury(
                     player_id=player_id,
                     injury_type=injury_data["injury_type"],
@@ -187,15 +231,16 @@ class ScrapingManager:
                 
                 db.add(new_injury)
                 added += 1
-                logger.success(f"   ✓ Ajoutée: {injury_data['player_name']}")
+                logger.success(f"   ✓ Ajoutée: {injury_data['player_name']}")
         
         try:
             db.commit()
         except Exception as e:
-            logger.error(f"Error: {e}")
+            logger.error(f"Erreur lors du commit en base de données : {e}")
             db.rollback()
         
         return added, updated
 
 
+# Instance globale du manager
 scraping_manager = ScrapingManager()

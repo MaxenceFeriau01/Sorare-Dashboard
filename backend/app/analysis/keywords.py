@@ -1,203 +1,153 @@
 """
-Configuration des mots-clés et patterns pour la détection de blessures et de statuts
+Définitions des mots-clés et constantes de confiance pour l'analyse des blessures.
 """
+from typing import Dict, List, Any
 
-# ============================================
-# MOTS-CLÉS BLESSURES
-# ============================================
+# ======================================================================
+# 1. Mots-clés de Blessure (INJURY_KEYWORDS)
+# ======================================================================
 
-INJURY_KEYWORDS = {
-    "blessure": {
+INJURY_KEYWORDS: Dict[str, Dict[str, Any]] = {
+    "blessure_generale": {
         "keywords": [
-            "blessé", "blessure", "forfait", "absent", "indisponible",
-            "touché", "victime", "souffre", "douleur", "gêne",
-            "ko", "out", "injured", "injury", "hurt", "pain",
-            "problema", "lesión", "lesionado"
+            "blessure", "injury", "injured", "douleur", "pain", 
+            "gêne", "knock", "problème physique", "physical issue", 
+            "problème musculaire", "muscle issue", "malade", "illness",
+            "incertain", "doubt", "incertitude", "absent", "absent for",
+            "out", "forfait", "ruled out", "écarté", "sidelined",
+            "absence", "inaptitude", "ko"
         ],
-        "weight": 2.0,  # Poids élevé = forte indication
+        "weight": 1.5 
     },
-    
     "gravite": {
         "keywords": [
-            "grave", "sérieux", "longue durée", "plusieurs semaines", "plusieurs mois",
-            "rupture", "fracture", "déchirure", "entorse",
-            "opération", "chirurgie", "intervention",
-            "severe", "serious", "surgery", "torn", "broken"
+            "grave", "severe", "sérieux", "serious", "légère", "minor", 
+            "longue durée", "long-term", "rechute", "relapse", 
+            "aggravation", "worsening", "touché", "rupture", "déchirure", 
+            "déchiré", "torn", "fracture", "broken", "opéré", "surgery",
+            "plusieurs semaines", "3 mois", "ligaments" # Ajouté pour la gravité
         ],
-        "weight": 1.5,
+        "weight": 2.5 
     },
-    
     "type_blessure": {
         "keywords": [
-            # Musculaires
-            "musculaire", "ischio", "quadriceps", "mollet", "adducteurs",
-            "hamstring", "calf", "thigh", "groin",
-            
-            # Articulations
-            "genou", "cheville", "épaule", "dos", "hanche",
-            "knee", "ankle", "shoulder", "back", "hip",
-            
-            # Ligaments
-            "ligament", "croisé", "LCA", "LCP", "ACL", "PCL",
-            
-            # Autres
-            "commotion", "côtes", "concussion", "ribs"
+            "cheville", "ankle", "genou", "knee", "cuisse", "thigh", 
+            "ischio", "hamstring", "mollet", "calf", "adducteur", "adductor",
+            "ligament", "ligamentaire", "menisque", "ménisque", "tendon", 
+            "tendinite", "commotion", "concussion", "épaule", "shoulder",
+            "dos", "back", "poignet", "wrist"
         ],
-        "weight": 1.2,
+        "weight": 1.8 
     },
-    
-    "retour": {
+    "termes_absence": {
         "keywords": [
-            "retour prévu", "absent", "semaines", "mois", "jours",
-            "forfait pour", "indisponible pendant",
-            "expected back", "out for", "sidelined",
-            "de baja", "recuperación"
+            "miss", "manquer", "rater", "return date", "date de retour", 
+            "prochain match", "next match", "absent contre", "miss against"
         ],
-        "weight": 1.0,
-    },
-}
-
-# ============================================
-# MOTS-CLÉS DISPONIBILITÉ
-# ============================================
-
-AVAILABILITY_KEYWORDS = {
-    "incertain": {
-        "keywords": [
-            "incertain", "doute", "évaluation", "tests", "examens",
-            "décision", "incertitude", "attente",
-            "doubtful", "questionable", "day-to-day", "game-time decision",
-            "duda", "evaluación"
-        ],
-        "confidence": 0.5,  # 50% de confiance
-    },
-    
-    "probablement_absent": {
-        "keywords": [
-            "très incertain", "peu de chances", "probablement forfait",
-            "unlikely", "probably out", "not expected",
-            "poco probable"
-        ],
-        "confidence": 0.2,  # 20% de chances de jouer
-    },
-    
-    "retour_imminent": {
-        "keywords": [
-            "de retour", "rétabli", "apte", "groupe", "reprise",
-            "retour à l'entraînement", "back in training",
-            "returned", "fit", "recovered", "available",
-            "recuperado", "disponible"
-        ],
-        "confidence": 0.8,  # 80% de chances de jouer
-    },
-    
-    "titulaire": {
-        "keywords": [
-            "titulaire", "alignement", "composition", "starting",
-            "XI de départ", "onze", "lineup", "starting eleven",
-            "titular", "once inicial"
-        ],
-        "confidence": 0.9,  # 90% de chances de jouer
-    },
-}
-
-# ============================================
-# PATTERNS DE CONTEXTE
-# ============================================
-
-CONTEXT_PATTERNS = {
-    "duree": {
-        # Patterns pour extraire la durée d'absence
-        "patterns": [
-            r"(\d+)\s+(jour|jours|day|days|día|días)",
-            r"(\d+)\s+(semaine|semaines|week|weeks|semana|semanas)",
-            r"(\d+)\s+(mois|month|months|mes|meses)",
-            r"plusieurs\s+(semaines|mois)",
-            r"quelques\s+(jours|semaines)",
-        ],
-        "multipliers": {
-            "jour": 1,
-            "semaine": 7,
-            "mois": 30,
-        }
-    },
-    
-    "negation": {
-        # Mots qui inversent le sens
-        "keywords": [
-            "pas", "non", "aucun", "sans", "ne", "ni",
-            "not", "no", "neither", "nor", "without",
-            "sin", "ningún"
-        ],
-        "weight": -1.0,  # Inverse le score
-    },
-    
-    "confirmation": {
-        # Mots qui confirment l'information
-        "keywords": [
-            "confirmé", "officiel", "annoncé", "déclaré",
-            "confirmed", "official", "announced", "stated",
-            "confirmado", "oficial"
-        ],
-        "weight": 1.5,  # Augmente la confiance
-    },
-}
-
-# ============================================
-# SOURCES ET FIABILITÉ
-# ============================================
-
-SOURCE_RELIABILITY = {
-    # Score de fiabilité par source (0-1)
-    "twitter": {
-        "verified_accounts": {
-            "Squawka": 0.9,
-            "FabrizioRomano": 0.95,
-            "lequipe": 0.95,
-            "RMCsport": 0.9,
-            "footmercato": 0.85,
-            "OptaJoe": 0.9,
-            "WhoScored": 0.85,
-        },
-        "club_official": 1.0,  # Comptes officiels des clubs
-        "journalist": 0.8,      # Journalistes vérifiés
-        "fan_account": 0.3,     # Comptes de fans
-        "unknown": 0.2,         # Comptes inconnus
-    },
-    
-    "websites": {
-        "lequipe.fr": 0.95,
-        "transfermarkt.com": 0.9,
-        "footmercato.net": 0.85,
-        "goal.com": 0.8,
-        "eurosport.fr": 0.9,
-        "sofoot.com": 0.85,
-        "rmcsport.bfmtv.com": 0.9,
+        "weight": 1.2
     }
 }
 
-# ============================================
-# SEUILS DE CONFIANCE
-# ============================================
+# ======================================================================
+# 2. Mots-clés de Disponibilité (AVAILABILITY_KEYWORDS)
+# ======================================================================
 
-CONFIDENCE_THRESHOLDS = {
-    "blessure_confirmee": 0.75,      # 75%+ = blessure confirmée
-    "blessure_probable": 0.50,       # 50-75% = blessure probable
-    "blessure_douteuse": 0.30,       # 30-50% = à surveiller
-    "info_non_fiable": 0.30,         # <30% = ignorer
-    
-    "disponibilite_confirmee": 0.80, # 80%+ = disponible
-    "disponibilite_probable": 0.60,  # 60-80% = probablement dispo
-    "incertain": 0.40,               # 40-60% = incertain
-    "indisponible": 0.20,            # <40% = probablement absent
+AVAILABILITY_KEYWORDS: Dict[str, Dict[str, Any]] = {
+    "titularisation_forte": {
+        "keywords": [
+            "titulaire", "starts", "starting", "lineup", 
+            "composition", "XI de départ", "first XI", "débutera",
+            "aligné", "alignement", "starter", "squad", "dans le groupe",
+            "starting eleven", "team sheet", "on the field"
+        ],
+        "confidence": 0.95 
+    },
+    "titularisation_moyenne": {
+        "keywords": [
+            "bench", "remplaçant", "substitut", "sur le banc", 
+            "disponible", "available", "present", "présent", 
+            "convoc", "convoqué", "in the squad", "en forme",
+            "on the bench", "sub", "reserves"
+        ],
+        "confidence": 0.70 
+    },
+    "entrainement": {
+        "keywords": [
+            "entrainement", "training", "reprise", "session", 
+            "récupération", "full training", "entraînement complet",
+            "practiced", "s'entraîne", "with the team"
+        ],
+        "confidence": 0.55 
+    },
+    "recherche_composition": {
+        "keywords": [
+            "lineup", "titulaire", "composition", "start", 
+            "bench", "remplaçant"
+        ],
+        "confidence": 0.0
+    }
 }
 
-# ============================================
-# CLUBS À SURVEILLER (optionnel)
-# ============================================
+# ======================================================================
+# 3. Modèles de Contexte (CONTEXT_PATTERNS)
+# ======================================================================
 
-PRIORITY_CLUBS = [
-    "Real Madrid", "Manchester City", "PSG", "Bayern Munich",
-    "Liverpool", "Barcelona", "Arsenal", "Manchester United",
-    # Ajoute les clubs de tes joueurs ici
-]
+CONTEXT_PATTERNS: Dict[str, Dict[str, Any]] = {
+    "phrases_cles": {
+        "keywords": [
+            "likely to miss", "probable d'être absent", "out for", "absent pour", 
+            "ne jouera pas", "will not play", "ruled out", "écarté",
+            "incertain pour", "doubtful for", "absent contre", "missed training"
+        ],
+    },
+    
+    "negation": {
+        "keywords": ["pas blessé", "not injured", "il va bien", "sera titulaire", "no injury", "non blessé", "fit to play", "aucune blessure"],
+    },
+    
+    "confirmation": {
+        "keywords": ["confirmé par", "officialisé par", "selon arteta", "selon guardiola", "confirms", "official statement", "club annonce", "mikel arteta", "ten hag", "klopp", "statement from club"],
+    },
+    
+    "duree": {
+        "patterns": [
+            # Pattern pour extraire (Nombre) (Unité: jours/semaines/mois)
+            r'(\d+)\s+(jour|jours|semaine|semaines|mois)', 
+        ],
+        "multipliers": {
+            "jour": 1, "jours": 1,
+            "semaine": 7, "semaines": 7,
+            "mois": 30,
+        }
+    }
+}
+
+# ======================================================================
+# 4. Seuils et Fiabilité de la Source
+# ======================================================================
+
+CONFIDENCE_THRESHOLDS: Dict[str, float] = {
+    "blessure_confirmee": 0.85,
+    "blessure_probable": 0.50,
+    "blessure_douteuse": 0.30,
+}
+
+SOURCE_RELIABILITY: Dict[str, Dict[str, Any]] = {
+    "twitter": {
+        "verified_accounts": {
+            "fabrizioromano": 0.90,
+            "ornstein": 0.85,
+            "davidornstein": 0.85,
+            "mohamedbouhafsi": 0.80,
+            "officialarsenal": 0.99, # Exemple de compte club
+            "unknown": 0.30, 
+        },
+        "unknown": 0.30
+    },
+    "websites": {
+        "lequipe.fr": 0.80,
+        "bbc.com": 0.85,
+        "skysports.com": 0.75,
+        "lfp.fr": 0.95,
+    }
+}

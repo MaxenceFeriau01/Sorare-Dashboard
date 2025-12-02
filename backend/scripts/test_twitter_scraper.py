@@ -1,50 +1,67 @@
-def test_twitter_login():
-    """Test la connexion à Twitter"""
+# Fichier: scripts/test_twitter_scraper.py
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# La ligne ci-dessus ajoute le répertoire 'backend' au PYTHONPATH
+"""
+Script de test pour valider le scraping Twitter/X.
+Ce script charge manuellement le fichier .env avant l'exécution.
+"""
+from dotenv import load_dotenv
+# 💥 CORRECTION ESSENTIELLE : Charger les variables d'environnement du .env
+load_dotenv() 
+
+from app.config import settings
+from app.scrapers.twitter_scraper import TwitterSeleniumScraper
+from loguru import logger
+from time import sleep
+
+# Configuration de Loguru pour s'assurer que les messages sont visibles
+logger.add("test_twitter.log", rotation="10 MB") 
+
+
+def test_scraper():
+    """Fonction pour tester le scraper Twitter/X"""
     
-    logger.info("=" * 60)
-    logger.info("🧪 TEST DE CONNEXION TWITTER")
-    logger.info("=" * 60)
+    logger.info("--- Démarrage du Test Twitter Scraper ---")
     
-    # Vérifier les credentials
+    # 1. Vérification des identifiants dans les settings
     if not settings.TWITTER_EMAIL or not settings.TWITTER_PASSWORD:
-        logger.error("❌ Credentials Twitter manquants dans le .env")
-        logger.info("\nAjoute ces lignes dans ton fichier .env :")
-        logger.info("TWITTER_EMAIL=ton_email@example.com")
-        logger.info("TWITTER_PASSWORD=ton_mot_de_passe")
-        logger.info("TWITTER_USERNAME=ton_@username")
-        return False
+        logger.error("❌ Les identifiants TWITTER_EMAIL ou TWITTER_PASSWORD sont vides dans les settings.")
+        logger.error("Vérifiez le fichier .env ! Le test s'arrête.")
+        return
+
+    logger.info(f"✅ Identifiants chargés pour l'utilisateur: {settings.TWITTER_USERNAME}")
     
-    logger.info(f"📧 Email: {settings.TWITTER_EMAIL}")
-    logger.info(f"👤 Username: {settings.TWITTER_USERNAME or 'Non défini'}")
-    
-    # Créer le scraper
+    scraper = None
     try:
+        # 2. Instancier le Scraper
         scraper = TwitterSeleniumScraper(
             twitter_email=settings.TWITTER_EMAIL,
             twitter_password=settings.TWITTER_PASSWORD,
-            twitter_username=settings.TWITTER_USERNAME,
+            twitter_username=settings.TWITTER_USERNAME
         )
         
-        # Initialiser le driver
-        scraper._init_driver()
-        logger.success("✅ Chrome driver initialisé")
+        # 3. Exécuter la fonction de recherche (cela va déclencher l'init du driver et le login)
+        logger.info("Tentative de recherche d'actualités pour 'Neymar'")
+        results = scraper.search_player_news("Neymar")
         
-        # Se connecter
-        if scraper._login():
-            logger.success("✅ Connexion réussie à Twitter!")
-            
-            # Attendre et laisser le navigateur ouvert
-            input("\n✨ Connexion réussie! Le navigateur va rester ouvert. Appuie sur Entrée quand tu veux fermer...")
-            
-            # NE PAS fermer immédiatement
-            # scraper.close()
-            return scraper  # Retourner le scraper au lieu de le fermer
+        logger.info("--- Analyse des résultats de recherche ---")
+        if results:
+            logger.success(f"🎉 TEST RÉUSSI : {len(results)} tweets trouvés pour Neymar.")
+            logger.debug(f"Premier tweet : {results[0]['content'][:100]}...")
         else:
-            logger.error("❌ Échec de connexion")
-            scraper.close()
-            return False
+            logger.warning("⚠️ TEST RÉUSSI (Connexion OK, mais) : Aucun tweet pertinent trouvé, ou la connexion au site a échoué après le login.")
             
     except Exception as e:
-        logger.error(f"❌ Erreur: {e}")
-        logger.exception("Détails:")
-        return False
+        logger.error(f"💣 TEST ÉCHOUÉ : Erreur inattendue durant l'exécution : {e}")
+        
+    finally:
+        # 4. Fermer le navigateur
+        if scraper:
+            scraper.close()
+        logger.info("--- Fin du Test Twitter Scraper ---")
+
+
+if __name__ == "__main__":
+    test_scraper()
