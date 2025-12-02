@@ -1,0 +1,172 @@
+version: '3.8'
+
+services:
+  # =================================
+  # DATABASE - PostgreSQL
+  # =================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: sorare-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sorare}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sorare_password}
+      POSTGRES_DB: ${POSTGRES_DB:-sorare_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - sorare-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sorare}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =================================
+  # CACHE - Redis
+  # =================================
+  redis:
+    image: redis:7-alpine
+    container_name: sorare-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - sorare-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =================================
+  # BACKEND - FastAPI (DEV MODE)
+  # =================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: sorare-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-sorare}:${POSTGRES_PASSWORD:-sorare_password}@postgres:5432/${POSTGRES_DB:-sorare_db}
+      - REDIS_URL=redis://redis:6379/0
+      - SORARE_EMAIL=${SORARE_EMAIL}
+      - SORARE_PASSWORD=${SORARE_PASSWORD}
+      - API_SECRET_KEY=${API_SECRET_KEY}
+      - ENVIRONMENT=development
+      - DEBUG=True
+    volumes:
+      - ./backend:/app
+      - /app/__pycache__
+      - /app/.pytest_cache
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - sorare-network
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # =================================
+  # CELERY WORKER - Tasks automatiques
+  # =================================
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: sorare-celery-worker
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-sorare}:${POSTGRES_PASSWORD:-sorare_password}@postgres:5432/${POSTGRES_DB:-sorare_db}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - SORARE_EMAIL=${SORARE_EMAIL}
+      - SORARE_PASSWORD=${SORARE_PASSWORD}
+      - ENVIRONMENT=development
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - sorare-network
+    command: celery -A app.tasks.celery_app worker --loglevel=info
+
+  # =================================
+  # CELERY BEAT - Scheduler (cron)
+  # =================================
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: sorare-celery-beat
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-sorare}:${POSTGRES_PASSWORD:-sorare_password}@postgres:5432/${POSTGRES_DB:-sorare_db}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - SORARE_EMAIL=${SORARE_EMAIL}
+      - SORARE_PASSWORD=${SORARE_PASSWORD}
+      - ENVIRONMENT=development
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - sorare-network
+    command: celery -A app.tasks.celery_app beat --loglevel=info
+
+  # =================================
+  # FRONTEND - Next.js (DEV MODE)
+  # =================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: sorare-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NODE_ENV=development
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - backend
+    networks:
+      - sorare-network
+    command: npm run dev
+
+# =================================
+# NETWORKS
+# =================================
+networks:
+  sorare-network:
+    driver: bridge
+
+# =================================
+# VOLUMES (données persistantes)
+# =================================
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
