@@ -1,0 +1,22 @@
+# Dépendances pour le scraping
+
+# Scraping web
+beautifulsoup4==4.12.2
+requests==2.31.0
+lxml==4.9.3
+
+# Selenium pour Twitter
+selenium==4.15.2
+undetected-chromedriver==3.5.4
+
+# Parsing et analyse
+python-dateutil==2.8.2
+
+# Optionnel : NLP pour extraction de noms
+# spacy==3.7.2
+# fr-core-news-md @ https://github.com/explosion/spacy-models/releases/download/fr_core_news_md-3.7.0/fr_core_news_md-3.7.0-py3-none-any.whl
+
+# Déjà dans requirements.txt principal
+# loguru
+# sqlalchemy
+# pydantic

@@ -78,3 +78,9 @@ pytest-cov==4.1.0
 # MONITORING & LOGS
 # =================================
 loguru==0.7.2
+
+# =================================
+# SCRAPING SUPPLÉMENTAIRE
+# =================================
+setuptools
+undetected-chromedriver==3.5.4

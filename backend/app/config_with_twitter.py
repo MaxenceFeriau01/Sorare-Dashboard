@@ -11,9 +11,7 @@ class Settings(BaseSettings):
     # Application
     APP_NAME: str = "Sorare Dashboard API"
     APP_VERSION: str = "1.0.0"
-    VERSION: str = "1.0.0"
     DEBUG: bool = True
-    API_V1_PREFIX: str = "/api/v1"
     
     # Database
     DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/sorare_db"
@@ -25,8 +23,8 @@ class Settings(BaseSettings):
     
     # CORS
     BACKEND_CORS_ORIGINS: List[str] = [
-        "http://localhost:3000",
-        "http://localhost:8000",
+        "http://localhost:3000",  # Frontend Next.js
+        "http://localhost:8000",  # Backend
     ]
     
     # Sorare API
@@ -34,17 +32,17 @@ class Settings(BaseSettings):
     SORARE_EMAIL: str = ""
     SORARE_PASSWORD: str = ""
     
-    # Twitter/X Credentials
-    TWITTER_EMAIL: str = ""
-    TWITTER_PASSWORD: str = ""
-    TWITTER_USERNAME: str = ""
+    # Twitter/X Credentials (pour le scraping avec Selenium)
+    TWITTER_EMAIL: str = ""           # Ton email Twitter
+    TWITTER_PASSWORD: str = ""        # Ton mot de passe Twitter
+    TWITTER_USERNAME: str = ""        # Ton @username (parfois demandé)
     
     # Scraping Settings
     SCRAPING_ENABLED: bool = True
-    SCRAPING_INTERVAL_MINUTES: int = 60
-    SCRAPING_RATE_LIMIT_SECONDS: int = 2
+    SCRAPING_INTERVAL_MINUTES: int = 60  # Scraping toutes les heures
+    SCRAPING_RATE_LIMIT_SECONDS: int = 2  # Délai entre requêtes
     
-    # Celery
+    # Celery (pour les tâches automatiques)
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
     
