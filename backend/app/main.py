@@ -10,6 +10,7 @@ from loguru import logger
 from app.config import settings
 from app.database import init_db
 from app.api.routes import players, injuries, stats, sorare
+from app.api.routes import players, injuries, stats, sorare, football, football_integration
 
 
 @asynccontextmanager
@@ -103,6 +104,18 @@ app.include_router(
     sorare.router,
     prefix=f"{settings.API_V1_PREFIX}/sorare",
     tags=["Sorare"]
+)
+
+app.include_router(
+    football.router,
+    prefix=f"{settings.API_V1_PREFIX}/football",
+    tags=["football-api"]
+)
+
+app.include_router(
+    football_integration.router,
+    prefix=f"{settings.API_V1_PREFIX}/players",
+    tags=["Football Integration"]
 )
 
 # =================================

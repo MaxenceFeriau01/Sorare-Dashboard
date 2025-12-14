@@ -79,6 +79,9 @@ class Settings(BaseSettings):
     SORARE_API_URL: str = "https://api.sorare.com/graphql"
     SORARE_EMAIL: str = ""
     SORARE_PASSWORD: str = ""
+
+    # API-Football
+    FOOTBALL_API_KEY: str = "b3337b4a41780ddee3261615c4d9fe4d"
     
     # ========================================
     # 7. TWITTER/X CREDENTIALS
