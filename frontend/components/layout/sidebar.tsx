@@ -9,6 +9,7 @@ import {
     HeartPulse,
     Settings,
     RefreshCw,
+    Plus,
 } from 'lucide-react';
 
 const menuItems = [
@@ -21,6 +22,11 @@ const menuItems = [
         title: 'Joueurs',
         href: '/players',
         icon: Users,
+    },
+    {
+        title: 'Import Joueurs',
+        href: '/import',
+        icon: Plus,
     },
     {
         title: 'Blessures',

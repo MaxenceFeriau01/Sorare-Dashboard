@@ -6,6 +6,7 @@ import { StatsCards } from '@/components/dashboard/stats-cards';
 import { TopPlayers } from '@/components/dashboard/top-players';
 import { PositionChart } from '@/components/dashboard/position-chart';
 import { RecentUpdates } from '@/components/dashboard/recent-updates';
+import { UpcomingMatchesPredictions } from '@/components/dashboard/upcoming-matches-predictions';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertCircle } from 'lucide-react';
@@ -91,6 +92,9 @@ export default function DashboardPage() {
 
       {/* Cartes de stats */}
       {stats && <StatsCards stats={stats.overview} />}
+
+      {/* 🆕 Prédictions des prochains matchs */}
+      <UpcomingMatchesPredictions />
 
       {/* Graphiques et listes */}
       <div className="grid gap-6 lg:grid-cols-2">

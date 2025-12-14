@@ -1,14 +1,22 @@
 """
 Routes API pour l'intégration API-Football
 """
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
+from sqlalchemy.orm import Session
 from typing import Optional
 from loguru import logger
 
 from app.services.football_api_service import football_api_service
+from app.database import get_db
+from app.models.player import Player
+from app.models.football_api_data import FootballAPIData
 
 router = APIRouter()
 
+
+# ============================================
+# STATUS & INFOS
+# ============================================
 
 @router.get("/status")
 async def check_api_status():
@@ -26,6 +34,10 @@ async def check_api_status():
     
     return result.get('data', {})
 
+
+# ============================================
+# RECHERCHE JOUEURS
+# ============================================
 
 @router.get("/search-players")
 async def search_players(
@@ -115,6 +127,10 @@ async def get_player_details(
     }
 
 
+# ============================================
+# ÉQUIPES
+# ============================================
+
 @router.get("/search-teams")
 async def search_teams(
     query: str = Query(..., min_length=3, description="Nom de l'équipe"),
@@ -194,6 +210,10 @@ async def get_team_info(team_id: int):
     }
 
 
+# ============================================
+# MATCHS
+# ============================================
+
 @router.get("/matches/upcoming/{team_id}")
 async def get_upcoming_matches(
     team_id: int,
@@ -252,6 +272,10 @@ async def get_upcoming_matches(
     }
 
 
+# ============================================
+# LIGUES
+# ============================================
+
 @router.get("/leagues")
 async def get_leagues(
     country: Optional[str] = Query(None, description="Pays"),
@@ -299,6 +323,10 @@ async def get_leagues(
     }
 
 
+# ============================================
+# BLESSURES
+# ============================================
+
 @router.get("/injuries")
 async def get_injuries(
     player_id: Optional[int] = Query(None, description="ID du joueur"),
@@ -327,4 +355,117 @@ async def get_injuries(
         "success": True,
         "count": result.get('results', 0),
         "injuries": result.get('data', [])
+    }
+
+
+# ============================================
+# 🆕 PRÉDICTIONS
+# ============================================
+
+@router.get("/player/{player_id}/next-match-prediction")
+async def get_player_next_match_with_prediction(
+    player_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Récupère le prochain match d'un joueur avec prédictions
+    
+    Retourne:
+    - Infos du prochain match
+    - Prédictions (gagnant, score, etc.)
+    - Score de jouabilité (0-10)
+    - Conseils pour Sorare
+    """
+    # Récupérer les données API-Football du joueur
+    football_data = db.query(FootballAPIData).filter(
+        FootballAPIData.player_id == player_id
+    ).first()
+    
+    if not football_data or not football_data.football_api_id:
+        raise HTTPException(
+            status_code=404,
+            detail="Données API-Football non trouvées pour ce joueur"
+        )
+    
+    if not football_data.current_team_id:
+        raise HTTPException(
+            status_code=404,
+            detail="Équipe actuelle non trouvée pour ce joueur"
+        )
+    
+    # Récupérer le prochain match avec prédictions
+    result = await football_api_service.get_player_next_match_prediction(
+        football_data.football_api_id,
+        football_data.current_team_id
+    )
+    
+    if not result.get('success'):
+        raise HTTPException(
+            status_code=404,
+            detail=result.get('message', 'Aucun prochain match trouvé')
+        )
+    
+    return result
+
+
+@router.get("/dashboard-predictions")
+async def get_dashboard_predictions(
+    db: Session = Depends(get_db)
+):
+    """
+    Récupère les prédictions pour tous les joueurs du dashboard
+    
+    Retourne une liste avec:
+    - Joueur
+    - Prochain match
+    - Prédictions
+    - Score de jouabilité
+    """
+    # Récupérer tous les joueurs actifs avec données API-Football
+    players_with_data = db.query(Player, FootballAPIData).join(
+        FootballAPIData,
+        Player.id == FootballAPIData.player_id
+    ).filter(
+        Player.is_active == True,
+        FootballAPIData.current_team_id.isnot(None)
+    ).limit(20).all()  # Limiter à 20 pour ne pas dépasser le rate limit
+    
+    predictions_list = []
+    
+    for player, football_data in players_with_data:
+        try:
+            # Récupérer le prochain match avec prédictions
+            result = await football_api_service.get_player_next_match_prediction(
+                football_data.football_api_id,
+                football_data.current_team_id
+            )
+            
+            if result.get('success'):
+                predictions_list.append({
+                    'player': {
+                        'id': player.id,
+                        'name': player.display_name,
+                        'position': player.position,
+                        'club': player.club_name,
+                        'image': player.image_url
+                    },
+                    'match': result.get('match'),
+                    'prediction': result.get('prediction'),
+                    'playability_score': result.get('playability_score'),
+                    'has_prediction': result.get('has_prediction', False)
+                })
+        except Exception as e:
+            logger.error(f"Erreur prédiction pour {player.display_name}: {e}")
+            continue
+    
+    # Trier par score de jouabilité (décroissant)
+    predictions_list.sort(
+        key=lambda x: x.get('playability_score', {}).get('score', 0),
+        reverse=True
+    )
+    
+    return {
+        'success': True,
+        'count': len(predictions_list),
+        'predictions': predictions_list
     }

@@ -91,3 +91,82 @@ export interface ApiError {
     error: string;
     detail: string;
 }
+
+// ============================================
+// 🆕 TYPES API-FOOTBALL
+// ============================================
+
+export interface FootballAPIPlayer {
+    id: number;
+    name: string;
+    firstname: string | null;
+    lastname: string | null;
+    age: number | null;
+    nationality: string | null;
+    photo: string | null;
+    height: string | null;
+    weight: string | null;
+    birth: {
+        date: string | null;
+        place: string | null;
+        country: string | null;
+    } | null;
+    injured: boolean;
+}
+
+export interface FootballAPITeam {
+    id: number;
+    name: string;
+    code: string | null;
+    country: string | null;
+    founded: number | null;
+    logo: string | null;
+    venue: {
+        name: string | null;
+        city: string | null;
+        capacity: number | null;
+    } | null;
+}
+
+export interface FootballAPIMatch {
+    id: number;
+    date: string;
+    timestamp: number;
+    venue: string | null;
+    status: string | null;
+    league: {
+        id: number;
+        name: string;
+        country: string;
+        logo: string | null;
+    };
+    home_team: {
+        id: number;
+        name: string;
+        logo: string | null;
+    };
+    away_team: {
+        id: number;
+        name: string;
+        logo: string | null;
+    };
+}
+
+export interface FootballSearchResponse {
+    success: boolean;
+    count: number;
+    players: FootballAPIPlayer[];
+}
+
+export interface ImportPlayerRequest {
+    football_api_id: number;
+    sorare_id: string;
+    display_name: string;
+    position?: string;
+}
+
+// ✅ CORRECTION: Le backend retourne directement un Player (PlayerCompleteResponse)
+export interface ImportPlayerResponse extends Player {
+    // La réponse est directement un Player avec tous ses champs
+    football_data?: any; // Optionnel car peut être null
+}

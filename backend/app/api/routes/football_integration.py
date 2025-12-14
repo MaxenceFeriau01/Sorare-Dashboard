@@ -160,38 +160,16 @@ async def import_player_from_football_api(
             football_data.upcoming_matches = upcoming
     
     # 6. Vérifier les blessures
-    injuries_result = await football_api_service.get_player_injuries(
-        player_id=request.football_api_id,
-        season=2025
-    )
+    # ⚠️ NOTE: L'endpoint /injuries retourne TOUTES les absences (suspension, repos, etc.)
+    # Pour éviter les faux positifs, on ne marque PAS automatiquement les joueurs comme blessés
+    # Les blessures seront mises à jour manuellement ou via scraping
     
-    if injuries_result.get('success') and injuries_result.get('data'):
-        injuries = injuries_result['data']
-        
-        # Prendre la blessure la plus récente
-        if injuries:
-            latest_injury = injuries[0]
-            player_info = latest_injury.get('player', {})
-            
-            football_data.is_injured = player_info.get('type') == 'Missing Fixture'
-            football_data.injury_type = player_info.get('type')
-            football_data.injury_reason = player_info.get('reason')
-            
-            # Mettre à jour aussi dans la table player
-            player.is_injured = football_data.is_injured
-            player.injury_status = football_data.injury_reason
-            
-            # Créer/mettre à jour dans la table injuries si blessé
-            if football_data.is_injured:
-                injury = Injury(
-                    player_id=player.id,
-                    injury_type=football_data.injury_type,
-                    injury_description=football_data.injury_reason,
-                    severity="Unknown",
-                    source="API-Football",
-                    is_active=True
-                )
-                db.add(injury)
+    # On initialise simplement les champs à vide
+    football_data.is_injured = False
+    football_data.injury_type = None
+    football_data.injury_reason = None
+    player.is_injured = False
+    player.injury_status = None
     
     # Sauvegarder tout
     db.commit()
@@ -201,6 +179,10 @@ async def import_player_from_football_api(
     logger.info(f"✅ Import terminé: {player.display_name} (ID: {player.id})")
     
     # 7. Retourner le joueur complet
+    # ✅ CORRECTION : Exclure detailed_stats car c'est une List et non un Dict
+    football_data_dict = football_data.to_dict()
+    football_data_dict.pop('detailed_stats', None)  # Retirer le champ problématique
+    
     return PlayerCompleteResponse(
         id=player.id,
         sorare_id=player.sorare_id,
@@ -214,7 +196,7 @@ async def import_player_from_football_api(
         average_score=player.average_score,
         total_games=player.total_games,
         is_injured=player.is_injured,
-        football_data=FootballAPIDataResponse(**football_data.to_dict())
+        football_data=FootballAPIDataResponse(**football_data_dict) if football_data_dict else None
     )
 
 
@@ -323,15 +305,20 @@ async def sync_player_with_football_api(
                 latest_injury = injuries[0]
                 player_info = latest_injury.get('player', {})
                 
+                # ✅ CORRECTION: Vérifier la raison pour déterminer si c'est une vraie blessure
+                reason = player_info.get('reason', '').lower()
+                injury_keywords = ['injury', 'blessure', 'muscle', 'knee', 'ankle', 'hamstring', 'thigh', 'calf', 'groin', 'back', 'shoulder', 'hip', 'foot', 'leg']
+                is_real_injury = any(keyword in reason for keyword in injury_keywords)
+                
                 old_injured_status = football_data.is_injured
-                football_data.is_injured = player_info.get('type') == 'Missing Fixture'
+                football_data.is_injured = is_real_injury
                 football_data.injury_type = player_info.get('type')
                 football_data.injury_reason = player_info.get('reason')
                 
-                player.is_injured = football_data.is_injured
-                player.injury_status = football_data.injury_reason
+                player.is_injured = is_real_injury
+                player.injury_status = player_info.get('reason') if is_real_injury else None
                 
-                injuries_updated = old_injured_status != football_data.is_injured
+                injuries_updated = old_injured_status != is_real_injury
             else:
                 # Pas de blessure
                 if football_data.is_injured:
@@ -387,6 +374,13 @@ def get_complete_player_data(
         FootballAPIData.player_id == player_id
     ).first()
     
+    # ✅ CORRECTION : Exclure detailed_stats si football_data existe
+    football_data_response = None
+    if football_data:
+        football_data_dict = football_data.to_dict()
+        football_data_dict.pop('detailed_stats', None)  # Retirer le champ problématique
+        football_data_response = FootballAPIDataResponse(**football_data_dict)
+    
     return PlayerCompleteResponse(
         id=player.id,
         sorare_id=player.sorare_id,
@@ -400,5 +394,5 @@ def get_complete_player_data(
         average_score=player.average_score,
         total_games=player.total_games,
         is_injured=player.is_injured,
-        football_data=FootballAPIDataResponse(**football_data.to_dict()) if football_data else None
+        football_data=football_data_response
     )

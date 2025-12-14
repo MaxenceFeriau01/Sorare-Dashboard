@@ -8,7 +8,13 @@ import type {
     InjuryListResponse,
     DashboardStats,
     SyncResponse,
-} from '@/types/api';
+    FootballSearchResponse,
+    FootballAPIPlayer,
+    FootballAPITeam,
+    FootballAPIMatch,
+    ImportPlayerRequest,
+    ImportPlayerResponse,
+} from '../app/types/api';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 const API_V1 = `${API_URL}/api/v1`;
@@ -72,7 +78,7 @@ export const playersApi = {
 
     // Mettre à jour un joueur
     update: async (id: number, player: Partial<Player>): Promise<Player> => {
-        const { data } = await api.put<Player>(`/players/${id}`, player);
+        const { data} = await api.put<Player>(`/players/${id}`, player);
         return data;
     },
 
@@ -157,6 +163,106 @@ export const sorareApi = {
         return data;
     },
 };
+
+// ============================================
+// 🆕 API-FOOTBALL
+// ============================================
+
+export const footballApi = {
+    // Vérifier le statut de l'API
+    checkStatus: async (): Promise<any> => {
+        const { data } = await api.get('/football/status');
+        return data;
+    },
+
+    // Rechercher des joueurs
+    searchPlayers: async (query: string, page: number = 1): Promise<FootballSearchResponse> => {
+        const { data } = await api.get<FootballSearchResponse>('/football/search-players', {
+            params: { query, page }
+        });
+        return data;
+    },
+
+    // Récupérer les détails d'un joueur
+    getPlayerDetails: async (playerId: number, season: number = 2025): Promise<any> => {
+        const { data } = await api.get(`/football/player/${playerId}`, {
+            params: { season }
+        });
+        return data;
+    },
+
+    // Rechercher des équipes
+    searchTeams: async (query: string, country?: string): Promise<any> => {
+        const { data } = await api.get('/football/search-teams', {
+            params: { query, country }
+        });
+        return data;
+    },
+
+    // Récupérer les infos d'une équipe
+    getTeamInfo: async (teamId: number): Promise<any> => {
+        const { data } = await api.get(`/football/team/${teamId}`);
+        return data;
+    },
+
+    // Récupérer les prochains matchs d'une équipe
+    getUpcomingMatches: async (teamId: number, next: number = 5): Promise<{ success: boolean; count: number; matches: FootballAPIMatch[] }> => {
+        const { data } = await api.get(`/football/matches/upcoming/${teamId}`, {
+            params: { next }
+        });
+        return data;
+    },
+
+    // Récupérer les ligues
+    getLeagues: async (country?: string, season: number = 2025): Promise<any> => {
+        const { data } = await api.get('/football/leagues', {
+            params: { country, season }
+        });
+        return data;
+    },
+
+    // Récupérer les blessures
+    getInjuries: async (playerId?: number, teamId?: number, season: number = 2025): Promise<any> => {
+        const { data } = await api.get('/football/injuries', {
+            params: { player_id: playerId, team_id: teamId, season }
+        });
+        return data;
+    },
+
+    // Importer un joueur depuis API-Football
+    importPlayer: async (request: ImportPlayerRequest): Promise<ImportPlayerResponse> => {
+        const { data } = await api.post<ImportPlayerResponse>('/players/import', request);
+        return data;
+    },
+
+    // Synchroniser un joueur existant
+    syncPlayer: async (playerId: number): Promise<any> => {
+        const { data } = await api.post(`/players/${playerId}/sync`);
+        return data;
+    },
+
+    // Récupérer toutes les données d'un joueur
+    getCompletePlayerData: async (playerId: number): Promise<any> => {
+        const { data } = await api.get(`/players/${playerId}/complete`);
+        return data;
+    },
+
+    // 🆕 AJOUTER CETTE FONCTION dans le footballApi de frontend/lib/api.ts
+
+// Récupérer les prédictions pour le dashboard
+getDashboardPredictions: async (): Promise<any> => {
+    const { data } = await api.get('/football/dashboard-predictions');
+    return data;
+},
+
+// Récupérer la prédiction pour un joueur spécifique
+getPlayerNextMatchPrediction: async (playerId: number): Promise<any> => {
+    const { data } = await api.get(`/football/player/${playerId}/next-match-prediction`);
+    return data;
+},
+};
+
+
 
 // ============================================
 // HEALTH CHECK

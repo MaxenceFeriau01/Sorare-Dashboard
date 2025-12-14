@@ -402,6 +402,214 @@ class FootballAPIService:
             "Attacker": "Forward"
         }
         return position_map.get(position, "Midfielder")
+    
+    # ============================================
+    # 🆕 PRÉDICTIONS
+    # ============================================
+    
+    async def get_fixture_prediction(self, fixture_id: int) -> dict:
+        """
+        Récupère les prédictions pour un match spécifique
+        
+        Args:
+            fixture_id: L'ID du match
+            
+        Returns:
+            dict: Prédictions du match
+        """
+        logger.info(f"🔮 Récupération des prédictions pour le match {fixture_id}")
+        
+        params = {
+            'fixture': fixture_id
+        }
+        
+        result = await self._make_request('/predictions', params)
+        
+        if result.get('success') and result.get('data'):
+            prediction_data = result['data'][0]
+            
+            # Extraire les infos importantes
+            predictions = prediction_data.get('predictions', {})
+            teams = prediction_data.get('teams', {})
+            comparison = prediction_data.get('comparison', {})
+            
+            return {
+                'success': True,
+                'fixture_id': fixture_id,
+                'predictions': {
+                    'winner': predictions.get('winner', {}),
+                    'win_or_draw': predictions.get('win_or_draw'),
+                    'under_over': predictions.get('under_over'),
+                    'goals_home': predictions.get('goals', {}).get('home'),
+                    'goals_away': predictions.get('goals', {}).get('away'),
+                    'advice': predictions.get('advice'),
+                    'percent': predictions.get('percent', {})
+                },
+                'teams': {
+                    'home': teams.get('home', {}),
+                    'away': teams.get('away', {})
+                },
+                'comparison': comparison,
+                'league': prediction_data.get('league', {})
+            }
+        
+        return {'success': False, 'data': None}
+    
+    async def get_player_next_match_prediction(self, player_id: int, team_id: int) -> dict:
+        """
+        Récupère le prochain match d'un joueur avec prédictions
+        
+        Args:
+            player_id: L'ID du joueur API-Football
+            team_id: L'ID de l'équipe du joueur
+            
+        Returns:
+            dict: Prochain match avec prédictions
+        """
+        logger.info(f"📅 Prochain match avec prédictions pour joueur {player_id}")
+        
+        # 1. Récupérer le prochain match
+        matches_result = await self.get_upcoming_matches(team_id, next=1)
+        
+        if not matches_result.get('success') or not matches_result.get('data'):
+            return {'success': False, 'message': 'Aucun prochain match trouvé'}
+        
+        next_match = matches_result['data'][0]
+        fixture_id = next_match.get('fixture', {}).get('id')
+        
+        if not fixture_id:
+            return {'success': False, 'message': 'ID du match non trouvé'}
+        
+        # 2. Récupérer les prédictions pour ce match
+        prediction = await self.get_fixture_prediction(fixture_id)
+        
+        if not prediction.get('success'):
+            # Retourner quand même le match sans prédictions
+            return {
+                'success': True,
+                'has_prediction': False,
+                'match': next_match,
+                'prediction': None
+            }
+        
+        # 3. Calculer un score de "jouabilité" (0-10)
+        playability_score = self._calculate_playability_score(
+            prediction, 
+            team_id
+        )
+        
+        return {
+            'success': True,
+            'has_prediction': True,
+            'match': next_match,
+            'prediction': prediction,
+            'playability_score': playability_score
+        }
+    
+    def _calculate_playability_score(self, prediction: dict, team_id: int) -> dict:
+        """
+        Calcule un score de jouabilité (0-10) basé sur les prédictions
+        
+        Args:
+            prediction: Les prédictions du match
+            team_id: L'ID de l'équipe du joueur
+            
+        Returns:
+            dict: Score et explications
+        """
+        score = 5.0  # Score de base
+        reasons = []
+        
+        # ✅ CORRECTION: Vérifier que predictions et teams existent
+        predictions = prediction.get('predictions') or {}
+        teams = prediction.get('teams') or {}
+        
+        # Déterminer si c'est l'équipe à domicile ou extérieur
+        home_team = teams.get('home') or {}
+        away_team = teams.get('away') or {}
+        is_home = home_team.get('id') == team_id
+        team_type = 'home' if is_home else 'away'
+        
+        # 1. Chance de victoire
+        winner = predictions.get('winner') or {}
+        if winner and winner.get('id') == team_id:
+            # ✅ CORRECTION: Vérifier que comment contient un % avant de convertir
+            comment = winner.get('comment', '0%')
+            try:
+                if '%' in str(comment):
+                    win_chance = float(str(comment).replace('%', ''))
+                    if win_chance >= 70:
+                        score += 2.5
+                        reasons.append(f"✅ Forte chance de victoire ({win_chance}%)")
+                    elif win_chance >= 50:
+                        score += 1.5
+                        reasons.append(f"👍 Bonne chance de victoire ({win_chance}%)")
+                    else:
+                        score += 0.5
+                        reasons.append(f"⚠️ Faible chance de victoire ({win_chance}%)")
+                else:
+                    # Si pas de %, on donne un bonus modéré
+                    score += 1.0
+                    reasons.append("✅ Équipe favorite")
+            except (ValueError, TypeError, AttributeError):
+                # En cas d'erreur, on donne un petit bonus
+                score += 0.5
+                reasons.append("👍 Équipe potentiellement favorite")
+        elif winner:
+            score -= 1
+            reasons.append("⚠️ Équipe pas favorite")
+        
+        # 2. Prédiction de buts
+        goals_prediction = predictions.get(f'goals_{team_type}')
+        if goals_prediction:
+            if '+2.5' in str(goals_prediction):
+                score += 1.5
+                reasons.append("⚽ Beaucoup de buts attendus")
+            elif '+1.5' in str(goals_prediction):
+                score += 1
+                reasons.append("⚽ Quelques buts attendus")
+        
+        # 3. Under/Over général
+        under_over = predictions.get('under_over')
+        if under_over and '+2.5' in str(under_over):
+            score += 0.5
+            reasons.append("🔥 Match spectaculaire prévu")
+        
+        # 4. Win or Draw
+        win_or_draw = predictions.get('win_or_draw')
+        if win_or_draw:
+            score += 0.5
+            reasons.append("🛡️ Pas de risque de défaite")
+        
+        # 5. Advice de l'API
+        advice_text = predictions.get('advice')
+        if advice_text and team_type in str(advice_text).lower():
+            score += 0.5
+            reasons.append("💡 Recommandé par l'API")
+        
+        # Limiter le score entre 0 et 10
+        score = max(0, min(10, score))
+        
+        # Déterminer le conseil
+        if score >= 8:
+            advice = "🌟 EXCELLENT - À jouer absolument !"
+            color = "green"
+        elif score >= 6:
+            advice = "✅ BON - Bon choix pour ta lineup"
+            color = "blue"
+        elif score >= 4:
+            advice = "⚠️ MOYEN - Risqué mais jouable"
+            color = "orange"
+        else:
+            advice = "❌ DIFFICILE - Éviter si possible"
+            color = "red"
+        
+        return {
+            'score': round(score, 1),
+            'advice': advice,
+            'color': color,
+            'reasons': reasons
+        }
 
 
 # Instance globale du service
