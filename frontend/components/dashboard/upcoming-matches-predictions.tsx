@@ -1,29 +1,44 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { footballApi } from '@/lib/api';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
     TrendingUp,
     Trophy,
     Calendar,
-    MapPin,
-    Target,
-    Flame,
-    Shield,
+    RefreshCw,
     AlertCircle,
 } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import Link from 'next/link';
+import { useState } from 'react';
 
 export function UpcomingMatchesPredictions() {
+    const queryClient = useQueryClient();
+    const [isRefreshing, setIsRefreshing] = useState(false);
+
     const { data, isLoading, error } = useQuery({
         queryKey: ['dashboard-predictions'],
         queryFn: () => footballApi.getDashboardPredictions(),
         refetchInterval: 3600000, // Rafraîchir toutes les heures
     });
+
+    // Handler pour le bouton Rafraîchir
+    const handleRefresh = async () => {
+        setIsRefreshing(true);
+        try {
+            await queryClient.invalidateQueries({ queryKey: ['dashboard-predictions'] });
+            await queryClient.refetchQueries({ queryKey: ['dashboard-predictions'] });
+        } catch (error) {
+            console.error('Erreur lors du rafraîchissement:', error);
+        } finally {
+            setIsRefreshing(false);
+        }
+    };
 
     if (isLoading) {
         return (
@@ -63,6 +78,18 @@ export function UpcomingMatchesPredictions() {
                         Optimise ta lineup avec les matchs recommandés
                     </p>
                 </div>
+                
+                {/* Bouton Rafraîchir */}
+                <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRefresh}
+                    disabled={isRefreshing}
+                    className="gap-2"
+                >
+                    <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                    Rafraîchir
+                </Button>
             </div>
 
             {/* Grille de prédictions */}
@@ -110,6 +137,11 @@ export function UpcomingMatchesPredictions() {
                                         }
                                         alt={player.name}
                                         className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-md group-hover:scale-110 transition-transform"
+                                        onError={(e) => {
+                                            e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(
+                                                player.name
+                                            )}&background=random`;
+                                        }}
                                     />
                                     <div className="flex-1 min-w-0">
                                         <h3 className="font-bold text-gray-900 truncate group-hover:text-blue-600 transition-colors">
@@ -224,7 +256,7 @@ export function UpcomingMatchesPredictions() {
                                                                 key={idx}
                                                                 className="text-xs text-gray-600"
                                                             >
-                                                                {reason}
+                                                                • {reason}
                                                             </p>
                                                         ))}
                                                 </div>

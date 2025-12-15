@@ -5,11 +5,13 @@ from fastapi import APIRouter, HTTPException, Query, Depends
 from sqlalchemy.orm import Session
 from typing import Optional
 from loguru import logger
+from datetime import datetime
 
 from app.services.football_api_service import football_api_service
 from app.database import get_db
 from app.models.player import Player
 from app.models.football_api_data import FootballAPIData
+from app.models.injury import Injury
 
 router = APIRouter()
 
@@ -463,9 +465,261 @@ async def get_dashboard_predictions(
         key=lambda x: x.get('playability_score', {}).get('score', 0),
         reverse=True
     )
+
     
     return {
         'success': True,
         'count': len(predictions_list),
         'predictions': predictions_list
+    }
+
+@router.get("/team/{team_id}/squad")
+async def get_team_squad(team_id: int, db: Session = Depends(get_db)):
+    """
+    ✅ VERSION CORRIGÉE - Récupère l'effectif complet d'une équipe
+    """
+    logger.info(f"📋 Récupération de l'effectif de l'équipe ID: {team_id}")
+    
+    # Récupérer l'effectif depuis l'API-Football
+    result = await football_api_service.get_team_squad(team_id)
+    
+    if not result.get('success'):
+        raise HTTPException(status_code=404, detail="Effectif non trouvé")
+    
+    data = result.get('data', [])
+    if not data:
+        raise HTTPException(status_code=404, detail="Aucune donnée retournée")
+    
+    # ✅ CORRECTION: L'API retourne [{ "team": {...}, "players": [...] }]
+    squad_data = data[0]
+    team_info = squad_data.get('team', {})
+    players_list = squad_data.get('players', [])
+    
+    logger.info(f"✅ {len(players_list)} joueurs trouvés")
+    
+    # Formater les joueurs pour le frontend
+    formatted_players = []
+    player_ids = []
+    
+    for player in players_list:
+        player_id = player.get('id')
+        if player_id:
+            player_ids.append(player_id)
+            
+        formatted_players.append({
+            "id": player_id,
+            "name": player.get('name'),
+            "firstname": player.get('firstname'),
+            "lastname": player.get('lastname'),
+            "age": player.get('age'),
+            "number": player.get('number'),
+            "position": player.get('position'),
+            "photo": player.get('photo'),
+            "nationality": player.get('nationality')
+        })
+    
+    # Vérifier quels joueurs sont déjà importés
+    existing_players = db.query(FootballAPIData).filter(
+        FootballAPIData.football_api_id.in_(player_ids)
+    ).all() if player_ids else []
+    
+    existing_ids = {fp.football_api_id: fp.player_id for fp in existing_players}
+    
+    # Enrichir avec le statut d'import
+    for player in formatted_players:
+        player_api_id = player['id']
+        player['is_imported'] = player_api_id in existing_ids
+        player['dashboard_player_id'] = existing_ids.get(player_api_id)
+    
+    return {
+        "success": True,
+        "team": {
+            "id": team_info.get('id'),
+            "name": team_info.get('name'),
+            "logo": team_info.get('logo')
+        },
+        "players": formatted_players,
+        "count": len(formatted_players),
+        "imported_count": len(existing_ids)
+    }
+
+
+@router.post("/team/{team_id}/import-player/{player_id}")
+async def import_player_from_team(
+    team_id: int,
+    player_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Importe un joueur depuis l'effectif d'une équipe
+    
+    Crée automatiquement un sorare_id basé sur le nom du joueur
+    
+    Exemple: POST /team/541/import-player/276
+    """
+    logger.info(f"📥 Import joueur {player_id} depuis équipe {team_id}")
+    
+    # Récupérer les données du joueur depuis l'API
+    player_result = await football_api_service.get_player_by_id(player_id, 2025)
+    
+    if not player_result.get('success') or not player_result.get('data'):
+        raise HTTPException(status_code=404, detail="Joueur non trouvé")
+    
+    player_data = player_result['data'][0]
+    player_info = player_data.get('player', {})
+    
+    # Vérifier si le joueur existe déjà
+    existing = db.query(FootballAPIData).filter(
+        FootballAPIData.football_api_id == player_id
+    ).first()
+    
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Ce joueur est déjà importé (ID: {existing.player_id})"
+        )
+    
+    # Générer un sorare_id automatique
+    # Format: prenom-nom-apiid (ex: kylian-mbappe-276)
+    firstname = player_info.get('firstname', '').lower().replace(' ', '-')
+    lastname = player_info.get('lastname', '').lower().replace(' ', '-')
+    sorare_id = f"{firstname}-{lastname}-{player_id}"
+    
+    # Utiliser la route d'import existante
+    from app.api.routes.football_integration import import_player_from_football_api
+    from app.schemas.football_api import ImportPlayerRequest
+    
+    import_request = ImportPlayerRequest(
+        football_api_id=player_id,
+        sorare_id=sorare_id,
+        display_name=player_info.get('name'),
+        position=None  # Sera rempli automatiquement
+    )
+    
+    result = await import_player_from_football_api(import_request, db)
+    
+    return {
+        "success": True,
+        "message": f"Joueur {player_info.get('name')} importé avec succès",
+        "player": result
+    }
+
+# ✅ À AJOUTER dans backend/app/api/routes/football.py
+
+@router.post("/sync-injuries")
+async def sync_injuries(db: Session = Depends(get_db)):
+    """
+    ✅ VERSION OPTIMISÉE - Synchronise les blessures avec validation
+    
+    OPTIMISATIONS:
+    - Limite à 10 joueurs max
+    - Déduplication des blessures
+    - Logs clairs
+    """
+    logger.info("🔄 Synchronisation des blessures avec validation")
+    
+    # ✅ LIMITER À 10 JOUEURS pour éviter le timeout
+    players_with_teams = db.query(Player, FootballAPIData).join(
+        FootballAPIData,
+        Player.id == FootballAPIData.player_id
+    ).filter(
+        Player.is_active == True,
+        FootballAPIData.football_api_id.isnot(None),
+        FootballAPIData.current_team_id.isnot(None)
+    ).limit(10).all()  # ✅ MAX 10 JOUEURS
+    
+    logger.info(f"📊 {len(players_with_teams)} joueur(s) à vérifier (max 10)")
+    
+    total_checked = 0
+    injuries_found = 0
+    injuries_cleared = 0
+    errors = []
+    
+    for player, football_data in players_with_teams:
+        try:
+            logger.info(f"🔍 [{total_checked + 1}/{len(players_with_teams)}] Vérification: {player.display_name}")
+            
+            # Appeler la fonction smart avec validation
+            result = await football_api_service.get_player_injuries_smart(
+                player_id=football_data.football_api_id,
+                team_id=football_data.current_team_id,
+                season=2025
+            )
+            
+            if not result.get('success'):
+                logger.warning(f"⚠️ Impossible de vérifier {player.display_name}")
+                continue
+            
+            validated_injuries = result.get('data', [])
+            total_checked += 1
+            
+            if validated_injuries:
+                # ✅ PRENDRE SEULEMENT LA PREMIÈRE BLESSURE (pas de duplicatas)
+                injury_info = validated_injuries[0].get('player', {})
+                
+                player.is_injured = True
+                player.injury_status = injury_info.get('reason', 'Injury')
+                
+                # Créer/mettre à jour dans la table injuries
+                existing_injury = db.query(Injury).filter(
+                    Injury.player_id == player.id,
+                    Injury.is_active == True
+                ).first()
+                
+                if not existing_injury:
+                    new_injury = Injury(
+                        player_id=player.id,
+                        injury_type=injury_info.get('type', 'Unknown'),
+                        injury_description=injury_info.get('reason', ''),
+                        severity='Moderate',
+                        is_active=True,
+                        injury_date=datetime.now()
+                    )
+                    db.add(new_injury)
+                    injuries_found += 1
+                    logger.success(f"✅ Blessure confirmée: {player.display_name}")
+                else:
+                    existing_injury.updated_at = datetime.now()
+                    logger.info(f"🔄 Blessure mise à jour: {player.display_name}")
+            
+            else:
+                # Pas de blessure ou invalidée
+                if player.is_injured:
+                    player.is_injured = False
+                    player.injury_status = None
+                    
+                    # Désactiver les blessures actives
+                    active_injuries = db.query(Injury).filter(
+                        Injury.player_id == player.id,
+                        Injury.is_active == True
+                    ).all()
+                    
+                    for injury in active_injuries:
+                        injury.is_active = False
+                        injury.recovery_date = datetime.now()
+                    
+                    injuries_cleared += 1
+                    logger.success(f"✅ Blessure invalidée: {player.display_name}")
+            
+            db.commit()
+            
+        except Exception as e:
+            error_msg = f"{player.display_name}: {str(e)}"
+            errors.append(error_msg)
+            logger.error(f"❌ Erreur pour {player.display_name}: {e}")
+            db.rollback()
+            continue
+    
+    logger.success(f"🎯 SYNCHRONISATION TERMINÉE: {total_checked} vérifiés, {injuries_found} confirmées, {injuries_cleared} invalidées")
+    
+    return {
+        "success": True,
+        "message": "Synchronisation terminée",
+        "stats": {
+            "total_checked": total_checked,
+            "injuries_found": injuries_found,
+            "injuries_cleared": injuries_cleared,
+            "errors": len(errors)
+        },
+        "errors": errors[:5] if errors else []  # Max 5 erreurs dans la réponse
     }

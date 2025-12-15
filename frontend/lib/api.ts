@@ -25,7 +25,7 @@ const api = axios.create({
     headers: {
         'Content-Type': 'application/json',
     },
-    timeout: 30000, // 30 secondes
+    timeout: 120000, // 30 secondes
 });
 
 // Intercepteur pour logger les requêtes (dev only)
@@ -205,6 +205,12 @@ export const footballApi = {
         return data;
     },
 
+    // ✅ NOUVELLE FONCTION: Récupérer l'effectif d'une équipe
+    getTeamSquad: async (teamId: number): Promise<any> => {
+        const { data } = await api.get(`/football/team/${teamId}/squad`);
+        return data;
+    },
+
     // Récupérer les prochains matchs d'une équipe
     getUpcomingMatches: async (teamId: number, next: number = 5): Promise<{ success: boolean; count: number; matches: FootballAPIMatch[] }> => {
         const { data } = await api.get(`/football/matches/upcoming/${teamId}`, {
@@ -229,6 +235,11 @@ export const footballApi = {
         return data;
     },
 
+    syncInjuries: async (): Promise<any> => {
+    const { data } = await api.post('/football/sync-injuries');
+    return data;
+},
+
     // Importer un joueur depuis API-Football
     importPlayer: async (request: ImportPlayerRequest): Promise<ImportPlayerResponse> => {
         const { data } = await api.post<ImportPlayerResponse>('/players/import', request);
@@ -247,22 +258,18 @@ export const footballApi = {
         return data;
     },
 
-    // 🆕 AJOUTER CETTE FONCTION dans le footballApi de frontend/lib/api.ts
+    // Récupérer les prédictions pour le dashboard
+    getDashboardPredictions: async (): Promise<any> => {
+        const { data } = await api.get('/football/dashboard-predictions');
+        return data;
+    },
 
-// Récupérer les prédictions pour le dashboard
-getDashboardPredictions: async (): Promise<any> => {
-    const { data } = await api.get('/football/dashboard-predictions');
-    return data;
-},
-
-// Récupérer la prédiction pour un joueur spécifique
-getPlayerNextMatchPrediction: async (playerId: number): Promise<any> => {
-    const { data } = await api.get(`/football/player/${playerId}/next-match-prediction`);
-    return data;
-},
+    // Récupérer la prédiction pour un joueur spécifique
+    getPlayerNextMatchPrediction: async (playerId: number): Promise<any> => {
+        const { data } = await api.get(`/football/player/${playerId}/next-match-prediction`);
+        return data;
+    },
 };
-
-
 
 // ============================================
 // HEALTH CHECK

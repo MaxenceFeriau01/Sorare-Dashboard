@@ -10,6 +10,7 @@ import {
     Settings,
     RefreshCw,
     Plus,
+    Shield,
 } from 'lucide-react';
 
 const menuItems = [
@@ -27,6 +28,11 @@ const menuItems = [
         title: 'Import Joueurs',
         href: '/import',
         icon: Plus,
+    },
+    {
+        title: 'Import par Équipe',
+        href: '/teams',
+        icon: Shield,
     },
     {
         title: 'Blessures',

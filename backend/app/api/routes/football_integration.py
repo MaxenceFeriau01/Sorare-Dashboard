@@ -1,16 +1,18 @@
 """
-Routes d'intégration API-Football dans le dashboard Sorare
+Routes d'intégration API-Football
+✅ CORRECTIONS APPLIQUÉES:
+1. Utilisation de la méthode get_player_injuries_smart()
+2. Gestion correcte du statut is_injured
+3. Distinction entre "Missing Fixture" et "Questionable"
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime
-from typing import Optional
 from loguru import logger
 
 from app.database import get_db
 from app.models.player import Player
 from app.models.football_api_data import FootballAPIData
-from app.models.injury import Injury
 from app.schemas.football_api import (
     ImportPlayerRequest,
     SyncPlayerResponse,
@@ -29,11 +31,6 @@ async def import_player_from_football_api(
 ):
     """
     Importe un joueur depuis l'API-Football et le stocke en base
-    
-    1. Crée/met à jour le joueur dans la table `players`
-    2. Récupère toutes ses données depuis l'API-Football
-    3. Stocke les données dans `football_api_data`
-    4. Retourne le joueur complet avec toutes ses infos
     """
     logger.info(f"📥 Import joueur API-Football ID: {request.football_api_id}")
     
@@ -44,7 +41,6 @@ async def import_player_from_football_api(
         logger.info(f"✅ Joueur existant trouvé: {existing_player.display_name}")
         player = existing_player
     else:
-        # Créer le nouveau joueur
         player = Player(
             sorare_id=request.sorare_id,
             display_name=request.display_name,
@@ -66,7 +62,7 @@ async def import_player_from_football_api(
     api_player = player_data.get('player', {})
     statistics = player_data.get('statistics', [])
     
-    # 3. Mettre à jour le joueur avec les infos de l'API
+    # 3. Mettre à jour le joueur
     player.first_name = api_player.get('firstname')
     player.last_name = api_player.get('lastname')
     player.display_name = api_player.get('name', player.display_name)
@@ -75,7 +71,6 @@ async def import_player_from_football_api(
     player.country = api_player.get('nationality')
     player.image_url = api_player.get('photo')
     
-    # Mettre à jour depuis les stats si disponibles
     if statistics:
         main_stats = statistics[0]
         team = main_stats.get('team', {})
@@ -85,7 +80,7 @@ async def import_player_from_football_api(
         if not player.position and games.get('position'):
             player.position = games.get('position')
     
-    # 4. Gérer les données API-Football
+    # 4. Créer ou mettre à jour football_api_data
     football_data = db.query(FootballAPIData).filter(
         FootballAPIData.player_id == player.id
     ).first()
@@ -94,7 +89,6 @@ async def import_player_from_football_api(
         football_data = FootballAPIData(player_id=player.id)
         db.add(football_data)
     
-    # Remplir les données API-Football
     football_data.football_api_id = request.football_api_id
     football_data.name = api_player.get('name')
     football_data.firstname = api_player.get('firstname')
@@ -105,7 +99,6 @@ async def import_player_from_football_api(
     football_data.weight = api_player.get('weight')
     football_data.photo = api_player.get('photo')
     
-    # Stats de la saison
     if statistics:
         main_stats = statistics[0]
         team = main_stats.get('team', {})
@@ -116,7 +109,6 @@ async def import_player_from_football_api(
         football_data.current_team_id = team.get('id')
         football_data.current_team_name = team.get('name')
         football_data.current_team_logo = team.get('logo')
-        football_data.current_season = 2025
         football_data.season_appearances = games.get('appearances') or 0
         football_data.season_goals = goals.get('total') or 0
         football_data.season_assists = goals.get('assists') or 0
@@ -124,13 +116,9 @@ async def import_player_from_football_api(
         football_data.season_yellow_cards = cards.get('yellow') or 0
         football_data.season_red_cards = cards.get('red') or 0
         football_data.season_rating = float(games.get('rating') or 0) if games.get('rating') else None
-        
-        # Stocker toutes les stats détaillées
         football_data.detailed_stats = statistics
     
-    football_data.last_api_sync = datetime.utcnow()
-    
-    # 5. Récupérer et stocker les prochains matchs
+    # 5. Récupérer les prochains matchs
     if football_data.current_team_id:
         matches_result = await football_api_service.get_upcoming_matches(
             football_data.current_team_id, 
@@ -159,29 +147,26 @@ async def import_player_from_football_api(
             
             football_data.upcoming_matches = upcoming
     
-    # 6. Vérifier les blessures
-    # ⚠️ NOTE: L'endpoint /injuries retourne TOUTES les absences (suspension, repos, etc.)
-    # Pour éviter les faux positifs, on ne marque PAS automatiquement les joueurs comme blessés
-    # Les blessures seront mises à jour manuellement ou via scraping
-    
-    # On initialise simplement les champs à vide
+    # 6. ✅ NOUVELLE LOGIQUE: Vérifier les blessures intelligemment
     football_data.is_injured = False
     football_data.injury_type = None
     football_data.injury_reason = None
     player.is_injured = False
     player.injury_status = None
     
-    # Sauvegarder tout
+    # Initialiser à "disponible" par défaut lors de l'import
+    # La synchronisation mettra à jour le statut réel
+    
+    football_data.last_api_sync = datetime.utcnow()
     db.commit()
     db.refresh(player)
     db.refresh(football_data)
     
     logger.info(f"✅ Import terminé: {player.display_name} (ID: {player.id})")
     
-    # 7. Retourner le joueur complet
-    # ✅ CORRECTION : Exclure detailed_stats car c'est une List et non un Dict
+    # Retourner le joueur complet
     football_data_dict = football_data.to_dict()
-    football_data_dict.pop('detailed_stats', None)  # Retirer le champ problématique
+    football_data_dict.pop('detailed_stats', None)
     
     return PlayerCompleteResponse(
         id=player.id,
@@ -206,16 +191,14 @@ async def sync_player_with_football_api(
     db: Session = Depends(get_db)
 ):
     """
-    Synchronise un joueur existant avec l'API-Football
+    ✅ SYNCHRONISATION CORRIGÉE avec logique intelligente des blessures
     
-    Met à jour :
-    - Stats de la saison
-    - Prochains matchs
-    - Statut de blessure
+    Synchronise un joueur existant avec l'API-Football
+    Met à jour : stats, matchs, et statut de blessure
     """
     logger.info(f"🔄 Synchronisation joueur ID: {player_id}")
     
-    # 1. Récupérer le joueur et ses données API
+    # 1. Récupérer le joueur
     player = db.query(Player).filter(Player.id == player_id).first()
     if not player:
         raise HTTPException(status_code=404, detail="Joueur non trouvé")
@@ -227,7 +210,7 @@ async def sync_player_with_football_api(
     if not football_data:
         raise HTTPException(
             status_code=404,
-            detail="Aucune donnée API-Football pour ce joueur. Utilisez /import d'abord."
+            detail="Aucune donnée API-Football. Utilisez /import d'abord."
         )
     
     stats_updated = False
@@ -292,46 +275,38 @@ async def sync_player_with_football_api(
                 football_data.upcoming_matches = upcoming
                 matches_updated = True
         
-        # 4. Vérifier les blessures
-        injuries_result = await football_api_service.get_player_injuries(
-            player_id=football_data.football_api_id,
-            season=2025
-        )
-        
-        if injuries_result.get('success'):
-            injuries = injuries_result.get('data', [])
+        # 4. ✅ NOUVELLE LOGIQUE INTELLIGENTE: Vérifier les blessures
+        if football_data.current_team_id:
+            injury_check = await football_api_service.get_player_injuries_smart(
+                player_id=football_data.football_api_id,
+                team_id=football_data.current_team_id,
+                season=2025
+            )
             
-            if injuries:
-                latest_injury = injuries[0]
-                player_info = latest_injury.get('player', {})
-                
-                # ✅ CORRECTION: Vérifier la raison pour déterminer si c'est une vraie blessure
-                reason = player_info.get('reason', '').lower()
-                injury_keywords = ['injury', 'blessure', 'muscle', 'knee', 'ankle', 'hamstring', 'thigh', 'calf', 'groin', 'back', 'shoulder', 'hip', 'foot', 'leg']
-                is_real_injury = any(keyword in reason for keyword in injury_keywords)
-                
-                old_injured_status = football_data.is_injured
-                football_data.is_injured = is_real_injury
-                football_data.injury_type = player_info.get('type')
-                football_data.injury_reason = player_info.get('reason')
-                
-                player.is_injured = is_real_injury
-                player.injury_status = player_info.get('reason') if is_real_injury else None
-                
-                injuries_updated = old_injured_status != is_real_injury
+            old_injured_status = football_data.is_injured
+            
+            # Mettre à jour selon la nouvelle logique
+            football_data.is_injured = injury_check.get('is_injured', False)
+            player.is_injured = injury_check.get('is_injured', False)
+            
+            if injury_check.get('is_injured'):
+                # Vraiment blessé
+                injury_info = injury_check.get('injury_info', {})
+                football_data.injury_type = injury_info.get('type')
+                football_data.injury_reason = injury_info.get('reason')
+                player.injury_status = injury_info.get('reason')
+                logger.warning(f"❌ {player.display_name} confirmé BLESSÉ: {injury_info.get('reason')}")
             else:
-                # Pas de blessure
-                if football_data.is_injured:
-                    football_data.is_injured = False
-                    football_data.injury_type = None
-                    football_data.injury_reason = None
-                    player.is_injured = False
-                    player.injury_status = None
-                    injuries_updated = True
+                # Pas blessé ou incertain
+                football_data.injury_type = None
+                football_data.injury_reason = None
+                player.injury_status = None
+                logger.info(f"✅ {player.display_name} DISPONIBLE")
+            
+            injuries_updated = (old_injured_status != football_data.is_injured)
         
-        # 5. Mise à jour du timestamp
+        # 5. Mettre à jour le timestamp
         football_data.last_api_sync = datetime.utcnow()
-        
         db.commit()
         
         logger.info(f"✅ Synchronisation terminée pour {player.display_name}")
@@ -349,7 +324,7 @@ async def sync_player_with_football_api(
     except Exception as e:
         logger.error(f"❌ Erreur lors de la synchronisation: {e}")
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Erreur lors de la synchronisation: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erreur: {str(e)}")
 
 
 @router.get("/{player_id}/complete", response_model=PlayerCompleteResponse)
@@ -359,12 +334,6 @@ def get_complete_player_data(
 ):
     """
     Récupère TOUTES les données d'un joueur
-    
-    Retourne:
-    - Infos de base (table players)
-    - Stats API-Football (table football_api_data)
-    - Prochains matchs
-    - Statut de blessure
     """
     player = db.query(Player).filter(Player.id == player_id).first()
     if not player:
@@ -374,11 +343,10 @@ def get_complete_player_data(
         FootballAPIData.player_id == player_id
     ).first()
     
-    # ✅ CORRECTION : Exclure detailed_stats si football_data existe
     football_data_response = None
     if football_data:
         football_data_dict = football_data.to_dict()
-        football_data_dict.pop('detailed_stats', None)  # Retirer le champ problématique
+        football_data_dict.pop('detailed_stats', None)
         football_data_response = FootballAPIDataResponse(**football_data_dict)
     
     return PlayerCompleteResponse(
