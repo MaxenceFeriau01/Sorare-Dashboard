@@ -1,4 +1,8 @@
-// Types pour l'API Backend
+// Types pour l'API Backend - Complet avec tous les types nécessaires
+
+// ============================================
+// PLAYERS
+// ============================================
 
 export interface Player {
     id: number;
@@ -10,6 +14,10 @@ export interface Player {
     club_name: string | null;
     club_slug: string | null;
     position: string | null;
+    // 🆕 Ligue
+    league_name: string | null;
+    league_id: number | null;
+    league_country: string | null;
     country: string | null;
     country_code: string | null;
     age: number | null;
@@ -33,6 +41,24 @@ export interface PlayerListResponse {
     players: Player[];
 }
 
+// 🆕 Nouveau type pour les statistiques par ligue
+export interface LeagueStats {
+    league_name: string;
+    league_country: string | null;
+    player_count: number;
+    avg_score: number;
+    injured_count: number;
+}
+
+export interface LeagueListResponse {
+    success: boolean;
+    leagues: string[];
+}
+
+// ============================================
+// INJURIES
+// ============================================
+
 export interface Injury {
     id: number;
     player_id: number;
@@ -53,6 +79,10 @@ export interface InjuryListResponse {
     total: number;
     injuries: Injury[];
 }
+
+// ============================================
+// DASHBOARD STATS
+// ============================================
 
 export interface DashboardStats {
     overview: {
@@ -79,84 +109,151 @@ export interface DashboardStats {
     } | null;
 }
 
+// ============================================
+// SYNC
+// ============================================
+
 export interface SyncResponse {
     message: string;
     total_cards?: number;
     unique_players?: number;
-    players_added: number;
-    players_updated: number;
-}
-
-export interface ApiError {
-    error: string;
-    detail: string;
+    new_players?: number;
+    updated_players?: number;
 }
 
 // ============================================
-// 🆕 TYPES API-FOOTBALL
+// API-FOOTBALL - TYPES
 // ============================================
 
 export interface FootballAPIPlayer {
     id: number;
     name: string;
-    firstname: string | null;
-    lastname: string | null;
-    age: number | null;
-    nationality: string | null;
-    photo: string | null;
-    height: string | null;
-    weight: string | null;
+    firstname: string;
+    lastname: string;
+    age: number;
     birth: {
-        date: string | null;
-        place: string | null;
-        country: string | null;
-    } | null;
+        date: string;
+        place: string;
+        country: string;
+    };
+    nationality: string;
+    height: string;
+    weight: string;
     injured: boolean;
+    photo: string;
 }
 
 export interface FootballAPITeam {
     id: number;
     name: string;
-    code: string | null;
-    country: string | null;
-    founded: number | null;
-    logo: string | null;
-    venue: {
-        name: string | null;
-        city: string | null;
-        capacity: number | null;
-    } | null;
+    code: string;
+    country: string;
+    founded: number;
+    national: boolean;
+    logo: string;
 }
 
 export interface FootballAPIMatch {
-    id: number;
-    date: string;
-    timestamp: number;
-    venue: string | null;
-    status: string | null;
+    fixture: {
+        id: number;
+        referee: string;
+        timezone: string;
+        date: string;
+        timestamp: number;
+        venue: {
+            id: number;
+            name: string;
+            city: string;
+        };
+        status: {
+            long: string;
+            short: string;
+            elapsed: number;
+        };
+    };
     league: {
         id: number;
         name: string;
         country: string;
-        logo: string | null;
+        logo: string;
+        flag: string;
+        season: number;
+        round: string;
     };
-    home_team: {
-        id: number;
-        name: string;
-        logo: string | null;
+    teams: {
+        home: {
+            id: number;
+            name: string;
+            logo: string;
+            winner: boolean | null;
+        };
+        away: {
+            id: number;
+            name: string;
+            logo: string;
+            winner: boolean | null;
+        };
     };
-    away_team: {
-        id: number;
-        name: string;
-        logo: string | null;
+    goals: {
+        home: number | null;
+        away: number | null;
     };
+    score: {
+        halftime: {
+            home: number | null;
+            away: number | null;
+        };
+        fulltime: {
+            home: number | null;
+            away: number | null;
+        };
+    };
+}
+
+export interface FootballSearchResult {
+    player: FootballAPIPlayer;
+    statistics: Array<{
+        team: FootballAPITeam;
+        league: {
+            id: number;
+            name: string;
+            country: string;
+            logo: string;
+            flag: string;
+            season: number;
+        };
+        games: {
+            appearences: number;
+            lineups: number;
+            minutes: number;
+            number: number | null;
+            position: string;
+            rating: string;
+            captain: boolean;
+        };
+        goals: {
+            total: number;
+            conceded: number;
+            assists: number;
+            saves: number | null;
+        };
+        cards: {
+            yellow: number;
+            yellowred: number;
+            red: number;
+        };
+    }>;
 }
 
 export interface FootballSearchResponse {
     success: boolean;
-    count: number;
-    players: FootballAPIPlayer[];
+    results: number;
+    players: FootballSearchResult[];
 }
+
+// ============================================
+// IMPORT PLAYER
+// ============================================
 
 export interface ImportPlayerRequest {
     football_api_id: number;
@@ -165,8 +262,82 @@ export interface ImportPlayerRequest {
     position?: string;
 }
 
-// ✅ CORRECTION: Le backend retourne directement un Player (PlayerCompleteResponse)
-export interface ImportPlayerResponse extends Player {
-    // La réponse est directement un Player avec tous ses champs
-    football_data?: any; // Optionnel car peut être null
+export interface ImportPlayerResponse {
+    id: number;
+    sorare_id: string;
+    display_name: string;
+    first_name: string | null;
+    last_name: string | null;
+    club_name: string | null;
+    position: string | null;
+    country: string | null;
+    age: number | null;
+    average_score: number;
+    total_games: number;
+    is_injured: boolean;
+    football_data: {
+        id: number;
+        player_id: number;
+        football_api_id: number;
+        name: string;
+        age: number | null;
+        nationality: string | null;
+        height: string | null;
+        weight: string | null;
+        photo: string | null;
+        current_team: {
+            id: number;
+            name: string;
+            logo: string | null;
+        } | null;
+        season_stats: {
+            season: number;
+            appearances: number;
+            goals: number;
+            assists: number;
+            minutes: number;
+            yellow_cards: number;
+            red_cards: number;
+            rating: number | null;
+        };
+        injury_status: {
+            is_injured: boolean;
+            type: string | null;
+            reason: string | null;
+            date: string | null;
+        };
+        upcoming_matches: Array<{
+            date: string;
+            opponent: string;
+            competition: string;
+            is_home: boolean;
+            venue: string | null;
+        }>;
+        last_api_sync: string | null;
+        created_at: string | null;
+        updated_at: string | null;
+    } | null;
+}
+
+// ============================================
+// TEAM SQUAD
+// ============================================
+
+export interface SquadPlayer {
+    id: number;
+    name: string;
+    age: number;
+    number: number | null;
+    position: string;
+    photo: string;
+}
+
+export interface TeamSquadResponse {
+    success: boolean;
+    team: {
+        id: number;
+        name: string;
+        logo: string;
+    };
+    players: SquadPlayer[];
 }

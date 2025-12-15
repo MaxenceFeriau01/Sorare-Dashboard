@@ -26,6 +26,11 @@ class Player(Base):
     club_slug = Column(String(255))
     position = Column(String(50))  # Goalkeeper, Defender, Midfielder, Forward
     
+    # 🆕 Ligue (pour filtrer par compétition)
+    league_name = Column(String(200), index=True)  # Ex: "Premier League", "Ligue 1"
+    league_id = Column(Integer)  # ID de la ligue API-Football
+    league_country = Column(String(100))  # Ex: "England", "France"
+    
     # Nationalité
     country = Column(String(100))
     country_code = Column(String(10))
@@ -58,7 +63,7 @@ class Player(Base):
     last_sorare_sync = Column(DateTime(timezone=True))
     
     def __repr__(self):
-        return f"<Player {self.display_name} ({self.club_name})>"
+        return f"<Player {self.display_name} ({self.club_name} - {self.league_name})>"
     
     def to_dict(self):
         """Convertit le modèle en dictionnaire"""
@@ -71,6 +76,9 @@ class Player(Base):
             "slug": self.slug,
             "club_name": self.club_name,
             "position": self.position,
+            "league_name": self.league_name,
+            "league_id": self.league_id,
+            "league_country": self.league_country,
             "country": self.country,
             "age": self.age,
             "average_score": self.average_score,

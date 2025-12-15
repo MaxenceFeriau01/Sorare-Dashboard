@@ -3,10 +3,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { statsApi, playersApi } from '@/lib/api';
 import { StatsCards } from '@/components/dashboard/stats-cards';
-import { TopPlayers } from '@/components/dashboard/top-players';
 import { PositionChart } from '@/components/dashboard/position-chart';
 import { RecentUpdates } from '@/components/dashboard/recent-updates';
 import { UpcomingMatchesPredictions } from '@/components/dashboard/upcoming-matches-predictions';
+import UpcomingMatchesWithResults from '@/components/dashboard/UpcomingMatchesWithResults';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertCircle } from 'lucide-react';
@@ -93,13 +93,13 @@ export default function DashboardPage() {
       {/* Cartes de stats */}
       {stats && <StatsCards stats={stats.overview} />}
 
-      {/* 🆕 Prédictions des prochains matchs */}
+      {/* Prédictions des prochains matchs */}
       <UpcomingMatchesPredictions />
 
       {/* Graphiques et listes */}
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* Top 5 joueurs */}
-        {stats && <TopPlayers players={stats.top_players} isLoading={statsLoading} />}
+        {/* 🆕 PROCHAINS MATCHS AVEC RÉSULTATS */}
+        <UpcomingMatchesWithResults />
 
         {/* Distribution par position */}
         {stats && (

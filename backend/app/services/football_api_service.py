@@ -3,7 +3,7 @@ Service pour interagir avec l'API-Football
 ✅ VERSION OPTIMISÉE AVEC VALIDATION PAR MATCHS RÉCENTS
 """
 import httpx
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from loguru import logger
 from datetime import datetime, timedelta
 
@@ -526,6 +526,40 @@ class FootballAPIService:
             'prediction': prediction,
             'playability_score': playability_score
         }
+    
+    # ============================================
+    # 🆕 HEAD TO HEAD & FIXTURES
+    # ============================================
+    
+    async def get_head_to_head(self, team1_id: int, team2_id: int, last: int = 1) -> Dict[str, Any]:
+        """
+        Récupère les derniers matchs entre deux équipes (Head to Head)
+        
+        Args:
+            team1_id: ID de la première équipe
+            team2_id: ID de la deuxième équipe
+            last: Nombre de matchs à récupérer (défaut: 1)
+        """
+        params = {
+            "h2h": f"{team1_id}-{team2_id}",
+            "last": last,
+            "status": "FT"  # Seulement les matchs terminés
+        }
+        
+        return await self._make_request("/fixtures/headtohead", params)
+    
+    async def get_fixture_by_id(self, fixture_id: int) -> Dict[str, Any]:
+        """
+        Récupère les détails d'un match spécifique par son ID
+        
+        Args:
+            fixture_id: ID du match
+        """
+        params = {
+            "id": fixture_id
+        }
+        
+        return await self._make_request("/fixtures", params)
     
     # ============================================
     # AUTRES MÉTHODES

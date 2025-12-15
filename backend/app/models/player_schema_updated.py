@@ -16,10 +16,9 @@ class PlayerBase(BaseModel):
     club_name: Optional[str] = None
     club_slug: Optional[str] = None
     position: Optional[str] = None
-    # 🆕 Ligue
-    league_name: Optional[str] = None
-    league_id: Optional[int] = None
-    league_country: Optional[str] = None
+    league_name: Optional[str] = None  # 🆕
+    league_id: Optional[int] = None    # 🆕
+    league_country: Optional[str] = None  # 🆕
     country: Optional[str] = None
     country_code: Optional[str] = None
     age: Optional[int] = None
@@ -38,10 +37,9 @@ class PlayerUpdate(BaseModel):
     display_name: Optional[str] = None
     club_name: Optional[str] = None
     position: Optional[str] = None
-    # 🆕 Ligue
-    league_name: Optional[str] = None
-    league_id: Optional[int] = None
-    league_country: Optional[str] = None
+    league_name: Optional[str] = None  # 🆕
+    league_id: Optional[int] = None    # 🆕
+    league_country: Optional[str] = None  # 🆕
     average_score: Optional[float] = None
     total_games: Optional[int] = None
     season_games: Optional[int] = None
@@ -76,7 +74,6 @@ class PlayerListResponse(BaseModel):
     players: list[PlayerResponse]
 
 
-# 🆕 Nouveau schema pour les statistiques par ligue
 class LeagueStats(BaseModel):
     """Schema pour les statistiques par ligue"""
     league_name: str
