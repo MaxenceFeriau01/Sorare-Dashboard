@@ -8,7 +8,6 @@ from typing import Optional, List
 from collections import defaultdict
 from datetime import datetime
 from loguru import logger
-from app.models.injury import Injury
 
 from app.database import get_db
 from app.models.player import Player
@@ -538,41 +537,14 @@ def delete_player(
     db: Session = Depends(get_db)
 ):
     """
-    Supprime un joueur et toutes ses données associées
+    Supprime un joueur
     """
-    # 1. Récupérer le joueur
     db_player = db.query(Player).filter(Player.id == player_id).first()
     
     if not db_player:
         raise HTTPException(status_code=404, detail="Joueur non trouvé")
     
-    player_name = db_player.display_name
-    
-    # 2. Supprimer les données FootballAPIData liées
-    db.query(FootballAPIData).filter(
-        FootballAPIData.player_id == player_id
-    ).delete()
-    
-    # 3. Supprimer les blessures liées
-    db.query(Injury).filter(
-        Injury.player_id == player_id
-    ).delete()
-    
-    # 4. Supprimer les prédictions de match liées (si la table existe)
-    try:
-        from app.models.match_prediction import MatchPrediction
-        db.query(MatchPrediction).filter(
-            MatchPrediction.player_id == player_id
-        ).delete()
-    except:
-        pass  # La table n'existe peut-être pas encore
-    
-    # 5. Supprimer le joueur
     db.delete(db_player)
-    
-    # 6. Commit
     db.commit()
     
-    logger.success(f"✅ Joueur {player_name} (ID: {player_id}) supprimé avec toutes ses données")
-    
-    return {"message": f"Joueur {player_name} supprimé avec succès"}
+    return {"message": f"Joueur {db_player.display_name} supprimé avec succès"}

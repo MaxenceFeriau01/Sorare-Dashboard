@@ -9,8 +9,7 @@ from loguru import logger
 
 from app.config import settings
 from app.database import init_db
-from app.api.routes import players, injuries, stats, sorare
-from app.api.routes import players, injuries, stats, sorare, football, football_integration
+from app.api.routes import players, injuries, stats, sorare, football, football_integration, player_stats
 
 
 @asynccontextmanager
@@ -117,6 +116,14 @@ app.include_router(
     prefix=f"{settings.API_V1_PREFIX}/players",
     tags=["Football Integration"]
 )
+
+# ✅ NOUVEAU: Router pour les statistiques détaillées des joueurs
+app.include_router(
+    player_stats.router,
+    prefix=f"{settings.API_V1_PREFIX}/player-stats",
+    tags=["Player Statistics"]
+)
+
 
 # =================================
 # EXCEPTION HANDLERS
